@@ -1,0 +1,60 @@
+import cv2  # Import OpenCV package for image processing
+import cvzone  # Import cvzone package for additional image processing capabilities
+from cvzone.ColorModule import ColorFinder  # Import ColorFinder module from cvzone package for color detection
+from cvzone.FPS import FPS  # Import FPS module from cvzone package for calculating frames per second
+import numpy as np  # Import numpy package for numerical operations
+
+fpsreader = FPS()  # Create FPS object to calculate frames per second
+cap = cv2.VideoCapture(0)  # Create VideoCapture object to read video frames from camera
+cap.set(3, 640)  # Set the width of the capture to 640 pixels
+cap.set(4, 480)  # Set the height of the capture to 480 pixels
+
+success, img = cap.read()  # Read in first frame from camera
+
+h, w, _ = img.shape  # Extract height and width of the frame
+
+myColorFinder = ColorFinder(False)  # Create ColorFinder object with automatic color range update turned off
+hsvVals = {'hmin': 36, 'smin': 29, 'vmin': 44, 'hmax': 90, 'smax': 150, 'vmax': 187}  # Define color range for detection (found using ColorFinder)
+
+while True:  # Loop continuously to read frames from camera
+    success, img = cap.read()  # Read in current frame from camera
+    fps, img = fpsreader.update(img)  # Calculate and display frames per second on image
+    imgColor, mask = myColorFinder.update(img, hsvVals)  # Detect color range in image using ColorFinder object
+    imgContour, contours = cvzone.findContours(img, mask)  # Find contours in binary mask
+
+    if contours:  # If contours are detected, extract data from first contour
+        data = contours[0]['center'][0], h - contours[0]['center'][1], int(contours[0]['area'])
+
+        # We have the length of the tennis ball that is 7.6cmx7.6cm
+
+        # We have the focal length of the camera
+        f = 535
+        # We have the width of the tennis ball in the real world
+        W = 6.5
+
+        # Finding width of the tennis ball in the image
+        w = np.sqrt(contours[0]['area'] / np.pi) * 2
+        # Finding the distance
+        d = (W * f) / w
+
+        x, y = contours[0]['center'][0], contours[0]['center'][1]
+
+        print("x: ", x)
+        print("y: ", y)
+        # print(d)
+        print(fps)
+
+        cvzone.putTextRect(img, f'depth: {int(d)} cm', (contours[0]['center'][0] - 75, contours[0]['center'][1] - 50),
+                           scale=2)  # Display distance in cm in a rectangle on the image
+        cv2.putText(img, f'x: {int(x)}, y: {int(y)}', (20, h - 600), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0),
+                    thickness=2)
+
+    imgStack = cvzone.stackImages([img, imgColor, mask, imgContour], 2,
+                                  0.5)  # Stack original image, detected color image, binary mask, and contour image
+    cv2.imshow("Image", imgStack)  # Display stacked image in a window titled "Image"
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):  # Wait for a key event, and if a key is pressed, exit loop and terminate script
+        break
+
+cap.release()
+cv2.destroyAllWindows()
