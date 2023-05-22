@@ -1,0 +1,77 @@
+import cv2
+import cvzone
+from cvzone.ColorModule import ColorFinder
+from cvzone.FPS import FPS
+import numpy as np
+
+# Function to check if a contour is a circle
+def is_circle(cnt, threshold=0.6):
+    area = cv2.contourArea(cnt)
+    perimeter = cv2.arcLength(cnt, True)
+    if perimeter == 0:
+        return False
+    circularity = 4 * np.pi * area / (perimeter * perimeter)
+    return circularity >= threshold
+
+fpsreader = FPS()
+
+cap = cv2.VideoCapture(0)
+# Set camera resolution
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+ret, frame = cap.read()
+
+h, w, _ = frame.shape
+
+myColorFinder: ColorFinder = ColorFinder(False)
+hsvValsBlue = {'hmin': 105, 'smin': 168, 'vmin': 119, 'hmax': 111, 'smax': 255, 'vmax': 255} #blue
+hsvValsGreen = {'hmin': 76, 'smin': 29, 'vmin': 132, 'hmax': 97, 'smax': 124, 'vmax': 255} #grønn
+hsvValsOrange = {'hmin': 0, 'smin': 120, 'vmin': 120, 'hmax': 20, 'smax': 255, 'vmax': 255} #orange
+
+while True:
+    ret, frame = cap.read()  # Read a frame from the video capture object
+    fps, img = fpsreader.update(frame)  # Update the FPS counter and get the updated frame
+
+    imgColorBlue, mask = myColorFinder.update(img, hsvValsBlue)  # Update the color detection for blue
+    imgColorGreen, maskRed = myColorFinder.update(img, hsvValsGreen)  # Update the color detection for green
+    imgColorOrange, maskOrange = myColorFinder.update(img, hsvValsOrange)  # Update the color detection for orange
+
+    imgContourBlue, contours = cvzone.findContours(img, mask)  # Find contours in the blue color mask
+    imgContourGreen, contoursRed = cvzone.findContours(img, maskRed)  # Find contours in the green color mask
+    imgContourOrange, contoursOrange = cvzone.findContours(img, maskOrange)  # Find contours in the orange color mask
+
+    # Filter contours that are circles
+    circular_contours_blue = [cnt for cnt in contours if is_circle(cnt['cnt'])]
+    circular_contours_green = [cnt for cnt in contoursRed if is_circle(cnt['cnt'])]
+    circular_contours_orange = [cnt for cnt in contoursOrange if is_circle(cnt['cnt'])]
+
+    # Process and display depth, x, and y position for each ball
+    for color, circular_contours_list in zip(['blue', 'green', 'orange'],
+                                             [circular_contours_blue, circular_contours_green, circular_contours_orange]):
+        if circular_contours_list:
+            cnt = circular_contours_list[0]
+            data = cnt['center'][0], h - cnt['center'][1], int(cnt['area'])
+
+            f = 474
+            W = 6.5
+            w = np.sqrt(cnt['area'] / np.pi) * 2
+            d = (W * f) / w
+            print(f"{color}: {d}")
+
+            # Display depth on the frame
+            cvzone.putTextRect(imgContourBlue, f'depth: {int(d)} cm',
+                               (cnt['center'][0] - 75, cnt['center'][1] - 50), scale=2)
+            # Display x and y position on the frame with more space between depth and position
+            cvzone.putTextRect(imgContourBlue, f'x: {cnt["center"][0]}, y: {cnt["center"][1]}',
+                               (cnt['center'][0] - 75, cnt['center'][1] - 10), scale=1.5)
+
+    imgStack = cvzone.stackImages([img, imgColorBlue, mask, imgContourBlue], 2, 0.5)
+    cv2.imshow("Image", imgStack)
+    # Check for 'q' key press and break the loop if pressed
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Release the camera resources and close the window
+cap.release()
+cv2.destroyAllWindows()
